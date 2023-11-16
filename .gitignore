@@ -1,0 +1,24 @@
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+*.swp
+
+# Log files
+logs/
+*.log
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Production build
+build/
+dist/
