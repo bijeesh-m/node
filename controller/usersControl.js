@@ -4,23 +4,27 @@ const Users = require("../models/users");
 const products = require("../models/products");
 const bcrypt = require("bcrypt");
 const asyncErrorHandler = require("../utils/asyncErrorHandler");
-const {customError} = require("../utils/customError");
+const { customError } = require("../utils/customError");
 
 ///////////////////////// USER REGISTRATION ///////////////////////////
 
-module.exports.register = asyncErrorHandler(async (req, res) => {
+module.exports.register = asyncErrorHandler(async (req, res, next) => {
   const newUser = await authSchema.validateAsync(req.body);
   const userExist = await Users.findOne({ email: newUser.email });
   if (userExist) {
-    res.send("user already registered");
+    const err = new customError("user already exist", 409);
+    next(err);
   } else {
-    const user = await Users.create(newUser);    
-    res.json({ user: user._id });
+    const user = await Users.create(newUser);
+    res.status(200).json({
+      status: "success",
+      message: "Registration Success.",
+      data: user._id,
+    });
   }
 });
 
 ///////////////////////// USER LOGIN ///////////////////////////
-
 
 module.exports.login = asyncErrorHandler(async (req, res) => {
   const user = req.body;
@@ -29,22 +33,44 @@ module.exports.login = asyncErrorHandler(async (req, res) => {
     const auth = await bcrypt.compare(user.password, userExist.password);
     if (auth) {
       const token = createToken(userExist._id);
-      res.cookie("userjwt", token, { httpOnly: true, maxAge: 12 * 60 * 60 * 1000 });
-      res.status(200).json({ user: userExist._id });
-    } else res.status(400).send("incorrect Password");
-  } else res.status(400).send("incorrect username");
+      res.cookie("userjwt", token, {
+        httpOnly: true,
+        maxAge: 12 * 60 * 60 * 1000,
+      });
+      res.status(200).json({
+        status: "Success",
+        message: "Login success",
+        user: userExist._id,
+      });
+    } else
+      res.status(401).json({
+        status: "failed",
+        message: "incorrect password",
+      });
+  } else
+    res.status(401).json({
+      status: "failed",
+      message: "incorrect username",
+    });
 });
 
 ///////////////////////// GET ALL PRODUCTS ///////////////////////////
 
-
 module.exports.products = asyncErrorHandler(async (req, res, next) => {
   const product = await products.find();
-  res.json(product);
+  if (!product) {
+    const err = new customError("No products availablr", 404);
+    return next(err);
+  } else {
+    res.status(401).json({
+      status: "Success",
+      message: "prodct successfully fetched",
+      data: product,
+    });
+  }
 });
 
 ///////////////////////// GET SPECIFIC PRODUCT ///////////////////////////
-
 
 module.exports.product = asyncErrorHandler(async (req, res, next) => {
   const id = req.params.id;
@@ -56,63 +82,65 @@ module.exports.product = asyncErrorHandler(async (req, res, next) => {
       data: currentProduct,
     });
   } else {
-    const err = new customError("product not found",404)
-    next(err)
+    const err = new customError("product not found", 404);
+    next(err);
   }
-})
+});
 
 ///////////////////////// PRODUCTS BY CATEGORY ///////////////////////////
 
-module.exports.productsByCategory = asyncErrorHandler(async (req, res, next) => {
-  const categoryName = req.params.categoryname;
-  const product = await products.find({ category: categoryName });
-  if (product.length === 0) {
-    const err = new customError("product not found",404)
-    next(err)
-  }else{
+module.exports.productsByCategory = asyncErrorHandler(
+  async (req, res, next) => {
+    const categoryName = req.params.categoryname;
+    const product = await products.find({ category: categoryName });
+    if (product.length === 0) {
+      const err = new customError("item not matching", 404);
+      next(err);
+    } else {
+      res.status(200).json({
+        status: "success",
+        message: "Successfully fetched producs.",
+        data: product,
+      });
+    }
+  }
+);
+
+///////////////////////// USER CART ///////////////////////////
+
+module.exports.cartItems = asyncErrorHandler(async (req, res, next) => {
+  const id = req.params.id;
+  const user = await Users.findById(id);
+  if (user.cart.length === 0) {
+    const err = new customError("cart is empty", 404);
+    next(err);
+  } else {
     res.status(200).json({
       status: "success",
       message: "Successfully fetched user cart.",
-      data: product,
-    })
+      data: user.cart,
+    });
   }
- });
-
- ///////////////////////// USER CART ///////////////////////////
-
-module.exports.cartItems = asyncErrorHandler(async (req, res) => {
-  const id = req.params.id;
-  const user = await Users.findById(id);
-  res.status(200).json({
-    status: "success",
-    message: "Successfully fetched user cart.",
-    data: user.cart,
-  })
 });
 
 ///////////////////////// ADD PRODUCTS TO CART ///////////////////////////
 
 module.exports.addToCart = asyncErrorHandler(async (req, res, next) => {
   const userid = req.params.id;
-  const prodId = req.body.prodId
-  
+  const prodId = req.body.prodId;
   const user = await Users.findById(userid);
-  const product = await products.findById(prodId)
-  // const cartItems = req.body;
-  const isExist = user.cart.find((item)=>item._id == prodId);
-  console.log(user.cart);
+  const product = await products.findById(prodId);
+  const isExist = user.cart.find((item) => item._id == prodId);
   if (isExist) {
-    const err = new customError("item already exist",409)
-    next(err)
+    const err = new customError("item already exist", 409);
+    next(err);
   } else {
-    // user.cart.push(cartItems);
-    // await user.save();
-    const updatedUser=await Users.findByIdAndUpdate(
+    const updatedUser = await Users.findByIdAndUpdate(
       userid,
-      {$push:{cart:product}},
-      {new:true}
-    )
-    await updatedUser.save()
+      { $push: { cart: product } },
+      { new: true }
+    );
+    await updatedUser.save();
     res.status(200).json({
       status: "success",
       message: "Successfully item added to cart.",
@@ -123,51 +151,71 @@ module.exports.addToCart = asyncErrorHandler(async (req, res, next) => {
 
 ///////////////////////// ADD PRODUCT TO WISHLIST ///////////////////////////
 
-module.exports.updateWishlist = asyncErrorHandler(async (req, res) => {
-  const id = req.params.id;
-  const user = await Users.findById(id);
-  const wishlist = req.body;
-  const isExist = user.wishlist.find(
-    (item) => item.itemName === wishlist.itemName
-  );
+module.exports.updateWishlist = asyncErrorHandler(async (req, res, next) => {
+  const userid = req.params.id;
+  const prodId = req.body.prodId;
+  const user = await Users.findById(userid);
+  const product = await products.findById(prodId);
+  const isExist = user.wishlist.find((item) => item._id == prodId);
   if (isExist) {
-    res.send("item already in a wishlist");
+    const err = new customError("item already exist", 409);
+    next(err);
   } else {
-    user.wishlist.push(wishlist);
-    await user.save();
+    const updatedUser = await Users.findByIdAndUpdate(
+      userid,
+      { $push: { wishlist: product } },
+      { new: true }
+    );
+    await updatedUser.save();
     res.status(200).json({
       status: "success",
       message: "Successfully updated wishlist.",
-      data: user,
+      data: updatedUser.wishlist,
     });
   }
 });
 
 ///////////////////////// USER WISHLIST ///////////////////////////
 
-module.exports.wishlists = asyncErrorHandler(async (req, res) => {
+module.exports.wishlists = asyncErrorHandler(async (req, res, next) => {
   const id = req.params.id;
   const user = await Users.findById(id);
-  res.status(200).json({
-    status: "success",
-    message: "Successfully fetched wishlist detailS.",
-    data: user.wishlist,
-  });
+  if (user.wishlist.length === 0) {
+    const err = new customError("wishlist is empty", 404);
+    next(err);
+  } else {
+    res.status(200).json({
+      status: "success",
+      message: "Successfully fetched wishlist detailS.",
+      data: user.wishlist,
+    });
+  }
 });
 
-///////////////////////// DELETE WISHLIST ///////////////////////////
+///////////////////////// DELETE PRODUCTS  FROM WISHLIST ///////////////////////////
 
-module.exports.deleteWishlist = asyncErrorHandler(async (req, res) => {
-  const id = req.params.id;
-  const user = await Users.findById(id);
-  const empty = [];
-  user.wishlist = empty;
-  await user.save();
-  res.status(200).json({
-    status: "success",
-    message: "Successfully deleted wishlist.",
-    data: user,
-  });
+module.exports.deleteWishlist = asyncErrorHandler(async (req, res, next) => {
+  const userid = req.params.id;
+  const prodId = req.body.prodId;
+  const user = await Users.findById(userid);
+  const updatedWishlist = user.wishlist.filter((item) => item._id != prodId);
+  const isExist = user.wishlist.find((item) => item._id == prodId);
+  if (isExist) {
+    const updatedUser = await Users.findByIdAndUpdate(
+      userid,
+      { $set: { wishlist: updatedWishlist } },
+      { new: true }
+    );
+    await updatedUser.save();
+    res.status(200).json({
+      status: "success",
+      message: "Successfully deleted whishlist item.",
+      data: updatedUser.wishlist,
+    });
+  } else {
+    const err = new customError("the item not found", 404);
+    next(err);
+  }
 });
 
 ///////////////////////// PAYMENT ///////////////////////////
