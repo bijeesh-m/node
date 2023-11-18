@@ -12,11 +12,13 @@ router.get(
   authenticate,
   usersControl.productsByCategory
 );
-router.get("/:id/cart", authenticate, usersControl.cartItems);
-router.post("/:id/cart", authenticate, usersControl.updateCart);
-router.post("/:id/wishlist", authenticate, usersControl.updateWishlist);
-router.get("/:id/wishlist", authenticate, usersControl.wishlists);
-router.delete("/:id/wishlist", authenticate, usersControl.deleteWishlist);
-router.post("/payment",authenticate,usersControl.payment)
+router.route("/:id/cart")
+  .get(authenticate, usersControl.cartItems)
+  .post(authenticate, usersControl.addToCart);
+router.route("/:id/wishlist")
+  .post(authenticate, usersControl.updateWishlist)
+  .get(authenticate, usersControl.wishlists)
+  .delete(authenticate, usersControl.deleteWishlist);
+router.post("/payment", authenticate, usersControl.payment);
 
 module.exports = router;

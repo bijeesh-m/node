@@ -1,168 +1,179 @@
 const { authSchema } = require("../helpers/validationSchema");
+const { createToken } = require("../helpers/createToken");
 const Users = require("../models/users");
 const products = require("../models/products");
-const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
+const asyncErrorHandler = require("../utils/asyncErrorHandler");
+const {customError} = require("../utils/customError");
 
-const maxAge = 12 * 60 * 60 * 1000;
-const createToken = (id) => {
-  return jwt.sign({ id }, "bijeesh - m secret", {
-    expiresIn: maxAge,
-  });
-};
+///////////////////////// USER REGISTRATION ///////////////////////////
 
-module.exports.register = async (req, res) => {
-  try {
-    const result = await authSchema.validateAsync(req.body);
-    const userExist = await Users.findOne({ email: result.email });
-    if (userExist) {
-      res.send("user already registered");
-    } else {
-      const user = await Users.create(result);
-      const token = createToken(user.id);
-      res.cookie("jwt", token, { httpOnly: true, maxAge: maxAge * 1000 });
-      res.json({ user: user._id });
-    }
-  } catch (err) {
-    res.send(err);
+module.exports.register = asyncErrorHandler(async (req, res) => {
+  const newUser = await authSchema.validateAsync(req.body);
+  const userExist = await Users.findOne({ email: newUser.email });
+  if (userExist) {
+    res.send("user already registered");
+  } else {
+    const user = await Users.create(newUser);    
+    res.json({ user: user._id });
   }
-};
+});
 
-module.exports.login = async (req, res) => {
+///////////////////////// USER LOGIN ///////////////////////////
+
+
+module.exports.login = asyncErrorHandler(async (req, res) => {
   const user = req.body;
-  console.log(user);
   const userExist = await Users.findOne({ username: user.username });
-  console.log(userExist);
   if (userExist) {
     const auth = await bcrypt.compare(user.password, userExist.password);
-    // console.log(bcrypt(user.password))
-    console.log(auth);
     if (auth) {
       const token = createToken(userExist._id);
-      res.cookie("jwt", token, { httpOnly: true, maxAge: maxAge });
+      res.cookie("userjwt", token, { httpOnly: true, maxAge: 12 * 60 * 60 * 1000 });
       res.status(200).json({ user: userExist._id });
     } else res.status(400).send("incorrect Password");
   } else res.status(400).send("incorrect username");
-};
+});
 
-module.exports.products = async (req, res, next) => {
-  try {
-  as()
-    const product = await products.find();
-    res.json(product);
-  } catch (err) {
-  //  return next(err)
-  res.json(err.message)
+///////////////////////// GET ALL PRODUCTS ///////////////////////////
+
+
+module.exports.products = asyncErrorHandler(async (req, res, next) => {
+  const product = await products.find();
+  res.json(product);
+});
+
+///////////////////////// GET SPECIFIC PRODUCT ///////////////////////////
+
+
+module.exports.product = asyncErrorHandler(async (req, res, next) => {
+  const id = req.params.id;
+  const currentProduct = await products.findById(id);
+  if (currentProduct) {
+    res.status(200).json({
+      status: "success",
+      message: "Successfully fetched product.",
+      data: currentProduct,
+    });
+  } else {
+    const err = new customError("product not found",404)
+    next(err)
   }
-};
+})
 
-module.exports.product = async (req, res) => {
-  try {
-    const id = req.params.id;
-    console.log(id);
-    const currentProduct = await products.findById(id);
-    console.log(currentProduct);
-    if (currentProduct) {
-      res.json(currentProduct);
-    }else{
-      res.status(404).send('product not found')
-    }
-  } catch (err) {
-    res.send(`product not found`);
-  }
-};
+///////////////////////// PRODUCTS BY CATEGORY ///////////////////////////
 
-module.exports.productsByCategory = async (req, res) => {
+module.exports.productsByCategory = asyncErrorHandler(async (req, res, next) => {
   const categoryName = req.params.categoryname;
   const product = await products.find({ category: categoryName });
-  if (product.length === 0) res.send("product not found");
-  else res.json(product);
-};
+  if (product.length === 0) {
+    const err = new customError("product not found",404)
+    next(err)
+  }else{
+    res.status(200).json({
+      status: "success",
+      message: "Successfully fetched user cart.",
+      data: product,
+    })
+  }
+ });
 
-module.exports.cartItems = async (req, res) => {
+ ///////////////////////// USER CART ///////////////////////////
+
+module.exports.cartItems = asyncErrorHandler(async (req, res) => {
   const id = req.params.id;
-  console.log(id);
   const user = await Users.findById(id);
-  res.json(user.cart);
-};
+  res.status(200).json({
+    status: "success",
+    message: "Successfully fetched user cart.",
+    data: user.cart,
+  })
+});
 
-module.exports.updateCart = async (req, res) => {
-  try {
-    const id = req.params.id;
-    const user = await Users.findById(id);
-    const cartItems = req.body;
-    const isExist = user.cart.find(
-      (item) => item.itemName === cartItems.itemName
-    );
-    if (isExist) {
-      res.send("item already in a cart");
-    } else {
-      user.cart.push(cartItems);
-      await user.save();
-      res.json(user.cart);
-    }
-  } catch (err) {
-    res.send(`Error occured : ${err}`);
-  }
-};
+///////////////////////// ADD PRODUCTS TO CART ///////////////////////////
 
-module.exports.updateWishlist = async (req, res) => {
-  try {
-    const id = req.params.id;
-    const user = await Users.findById(id);
-    const wishlist = req.body;
-    const isExist = user.wishlist.find(
-      (item) => item.itemName === wishlist.itemName
-    );
-    if (isExist) {
-      res.send("item already in a wishlist");
-    } else {
-      user.wishlist.push(wishlist);
-      await user.save();
-      res.json(user.wishlist);
-    }
-  } catch (err) {
-    res.send(`Error occured : ${err}`);
+module.exports.addToCart = asyncErrorHandler(async (req, res, next) => {
+  const userid = req.params.id;
+  const prodId = req.body.prodId
+  
+  const user = await Users.findById(userid);
+  const product = await products.findById(prodId)
+  // const cartItems = req.body;
+  const isExist = user.cart.find((item)=>item._id == prodId);
+  console.log(user.cart);
+  if (isExist) {
+    const err = new customError("item already exist",409)
+    next(err)
+  } else {
+    // user.cart.push(cartItems);
+    // await user.save();
+    const updatedUser=await Users.findByIdAndUpdate(
+      userid,
+      {$push:{cart:product}},
+      {new:true}
+    )
+    await updatedUser.save()
+    res.status(200).json({
+      status: "success",
+      message: "Successfully item added to cart.",
+      data: updatedUser.cart,
+    });
   }
-};
-module.exports.wishlists = async (req, res) => {
-  try {
-    const id = req.params.id;
-    const user = await Users.findById(id);
-    const wishlist = req.body;
-    const isExist = user.wishlist.find(
-      (item) => item.itemName === wishlist.itemName
-    );
-    if (isExist) {
-      res.json(user.wishlist);
-    } else {
-      res.send("you have no wishlist");
-    }
-  } catch (err) {
-    res.send(`Error occured : ${err}`);
-  }
-};
-module.exports.deleteWishlist = async (req, res) => {
-  try {
-    const id = req.params.id;
-    const user = await Users.findById(id);
-    const empty = [];
-    user.wishlist = empty;
+});
+
+///////////////////////// ADD PRODUCT TO WISHLIST ///////////////////////////
+
+module.exports.updateWishlist = asyncErrorHandler(async (req, res) => {
+  const id = req.params.id;
+  const user = await Users.findById(id);
+  const wishlist = req.body;
+  const isExist = user.wishlist.find(
+    (item) => item.itemName === wishlist.itemName
+  );
+  if (isExist) {
+    res.send("item already in a wishlist");
+  } else {
+    user.wishlist.push(wishlist);
     await user.save();
-    res.json(user);
-  } catch (err) {
-    res.send(`Error occured : ${err}`);
+    res.status(200).json({
+      status: "success",
+      message: "Successfully updated wishlist.",
+      data: user,
+    });
   }
-};
+});
 
-module.exports.payment = async (req,res)=>{
-  
-  try {
-    // const {amount,exp,cardnumber,mob} = req.body
-    // const paymentDetails = processProcess(amount,exp,cardnumber,mob)
-    res.send("paymentDetails")
-  } catch (err) {
-    res.json(err)
-  }
-  
-}
+///////////////////////// USER WISHLIST ///////////////////////////
+
+module.exports.wishlists = asyncErrorHandler(async (req, res) => {
+  const id = req.params.id;
+  const user = await Users.findById(id);
+  res.status(200).json({
+    status: "success",
+    message: "Successfully fetched wishlist detailS.",
+    data: user.wishlist,
+  });
+});
+
+///////////////////////// DELETE WISHLIST ///////////////////////////
+
+module.exports.deleteWishlist = asyncErrorHandler(async (req, res) => {
+  const id = req.params.id;
+  const user = await Users.findById(id);
+  const empty = [];
+  user.wishlist = empty;
+  await user.save();
+  res.status(200).json({
+    status: "success",
+    message: "Successfully deleted wishlist.",
+    data: user,
+  });
+});
+
+///////////////////////// PAYMENT ///////////////////////////
+
+module.exports.payment = asyncErrorHandler(async (req, res) => {
+  // const {amount,exp,cardnumber,mob} = req.body
+  // const paymentDetails = processProcess(amount,exp,cardnumber,mob)
+  res.send("paymentDetails");
+});
