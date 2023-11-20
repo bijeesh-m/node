@@ -21,7 +21,7 @@ const authenticate = (req, res, next) => {
       }
     });
   } else {
-    res.json("Authentication failed");
+    res.status(401).json("Authentication failed");
   }
 };
 

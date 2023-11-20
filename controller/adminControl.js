@@ -1,6 +1,5 @@
 const Users = require("../models/users");
 const Product = require("../models/products");
-const jwt = require("jsonwebtoken");
 const { createToken } = require("../helpers/createToken");
 const cloudinary = require("../utils/cloudinary");
 const asyncErrorHandler = require("../utils/asyncErrorHandler");
